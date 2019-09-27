@@ -30,7 +30,6 @@
 #include "SurfaceInterceptor.h"
 
 #include "TimeStats/TimeStats.h"
-#include "frame_extn_intf.h"
 #include "smomo_interface.h"
 
 namespace android {
