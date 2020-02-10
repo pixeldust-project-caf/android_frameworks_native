@@ -28,7 +28,9 @@
 #include <ui/GraphicBuffer.h>
 
 #include <android/configuration.h>
+#ifdef QCOM_UM_FAMILY
 #include <vendor/display/config/1.12/IDisplayConfig.h>
+#endif
 
 #include <inttypes.h>
 #include <algorithm>
@@ -755,6 +757,7 @@ void Display::loadConfig(hwc2_config_t configId)
     ALOGV("[%" PRIu64 "] loadConfig(%u)", mId, configId);
     bool smart_panel = false;
 
+#ifdef QCOM_UM_FAMILY
     if (mId == HWC_DISPLAY_PRIMARY) {
         using vendor::display::config::V1_12::IDisplayConfig;
         android::sp<IDisplayConfig> disp_config_v1_12 = IDisplayConfig::tryGetService();
@@ -762,6 +765,7 @@ void Display::loadConfig(hwc2_config_t configId)
             smart_panel = disp_config_v1_12->isSmartPanelConfig(mId, configId);
         }
     }
+#endif
 
     auto config = Config::Builder(*this, configId)
             .setWidth(getAttribute(configId, Attribute::Width))
