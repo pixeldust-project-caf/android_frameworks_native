@@ -230,6 +230,8 @@ public:
     void setDequeueLatency(const nsecs_t latency) { mDequeueLatency = latency; }
     nsecs_t getDequeueLatency() const { return mDequeueLatency; }
 
+    uint32_t getLayerType() const { return mLayerType; }
+
     // ------------------------------------------------------------------------
     // Geometry setting functions.
     //
@@ -871,6 +873,8 @@ protected:
     // latest buffer dequeue latency
     std::atomic<nsecs_t> mDequeueLatency{0};
 
+    uint32_t mLayerType{0};
+
     // main thread
     sp<NativeHandle> mSidebandStream;
     // Active buffer fields
@@ -897,6 +901,8 @@ protected:
 
     // protected by mLock
     mutable Mutex mLock;
+
+    mutable Mutex mActiveBufferLock;
 
     const wp<Client> mClientRef;
 
