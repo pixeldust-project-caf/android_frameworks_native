@@ -90,12 +90,16 @@ namespace composer {
 class ComposerExtnIntf;
 class ComposerExtnLib;
 class FrameExtnIntf;
+#ifdef QCOM_UM_FAMILY
 class LayerExtnIntf;
+#endif
 class FrameSchedulerIntf;
 } // namespace composer
 
 using composer::FrameExtnIntf;
+#ifdef QCOM_UM_FAMILY
 using composer::LayerExtnIntf;
+#endif
 
 namespace android {
 
@@ -186,6 +190,7 @@ public:
     int32_t mComposerSequenceId = 0;
 };
 
+#ifdef QCOM_UM_FAMILY
 class LayerExtWrapper {
 public:
     LayerExtWrapper() {}
@@ -208,6 +213,7 @@ private:
     CreateLayerExtnFuncPtr mLayerExtCreateFunc;
     DestroyLayerExtnFuncPtr mLayerExtDestroyFunc;
 };
+#endif
 
 class SurfaceFlinger : public BnSurfaceComposer,
                        public PriorityDumper,
@@ -1330,7 +1336,9 @@ private:
     bool (*mDestroyFrameExtnFunc)(FrameExtnIntf *interface) = nullptr;
 
     bool mUseLayerExt = false;
+#ifdef QCOM_UM_FAMILY
     std::unique_ptr<LayerExtWrapper> mLayerExt;
+#endif
 };
 
 } // namespace android
