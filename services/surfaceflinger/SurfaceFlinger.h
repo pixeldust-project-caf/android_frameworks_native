@@ -198,6 +198,7 @@ public:
 
     static std::unique_ptr<LayerExtWrapper> Create();
     int getLayerClass(const std::string &name);
+    void updateLayerState(const std::vector<std::string>&layers, int numLayers);
 
     LayerExtWrapper(const LayerExtWrapper&) = delete;
     LayerExtWrapper& operator=(const LayerExtWrapper&) = delete;
@@ -1336,6 +1337,7 @@ private:
     bool (*mDestroyFrameExtnFunc)(FrameExtnIntf *interface) = nullptr;
 
     bool mUseLayerExt = false;
+    bool mSplitLayerExt = false;
 #ifdef QCOM_UM_FAMILY
     std::unique_ptr<LayerExtWrapper> mLayerExt;
 #endif

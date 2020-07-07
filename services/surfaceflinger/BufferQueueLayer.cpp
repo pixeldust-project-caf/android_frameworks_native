@@ -619,7 +619,7 @@ void BufferQueueLayer::onFirstRef() {
     }
 
 #ifdef QCOM_UM_FAMILY
-    if (mFlinger->mLayerExt) {
+    if (mFlinger->mUseLayerExt && mFlinger->mLayerExt) {
         mLayerType = mFlinger->mLayerExt->getLayerClass(mName.string());
     }
 #endif
