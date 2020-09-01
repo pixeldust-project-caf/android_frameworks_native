@@ -1260,10 +1260,12 @@ void SurfaceFlinger::setDesiredActiveConfig(const ActiveConfigInfo& info) {
         mRefreshRateOverlay->changeRefreshRate(mDesiredActiveConfig.type);
     }
 
+#ifdef QCOM_UM_FAMILY
     if (mDisplayExtnIntf && !mCheckPendingFence) {
       const auto& refreshRate = mRefreshRateConfigs.getRefreshRate(mDesiredActiveConfig.configId);
       mDisplayExtnIntf->SetContentFps(refreshRate->fps);
     }
+#endif
 }
 
 status_t SurfaceFlinger::setActiveConfig(const sp<IBinder>& displayToken, int mode) {
