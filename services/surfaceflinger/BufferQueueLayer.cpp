@@ -34,9 +34,11 @@
 #include "Scheduler/LayerHistory.h"
 #include "TimeStats/TimeStats.h"
 
+#ifdef QCOM_UM_FAMILY
 #include "frame_extn_intf.h"
 #include "smomo_interface.h"
 #include "layer_extn_intf.h"
+#endif
 
 namespace android {
 
@@ -128,6 +130,7 @@ bool BufferQueueLayer::shouldPresentNow(nsecs_t expectedPresentTime) const {
 
     bool isDue = addedTime < expectedPresentTime;
 
+#ifdef QCOM_UM_FAMILY
     if (isDue && mFlinger->mSmoMo) {
         smomo::SmomoBufferStats bufferStats;
         bufferStats.id = getSequence();
@@ -137,6 +140,7 @@ bool BufferQueueLayer::shouldPresentNow(nsecs_t expectedPresentTime) const {
         bufferStats.dequeue_latency = 0;
         isDue = mFlinger->mSmoMo->ShouldPresentNow(bufferStats, expectedPresentTime);
     }
+#endif
 
     return isDue || !isPlausible;
 }
@@ -446,6 +450,7 @@ void BufferQueueLayer::onFrameAvailable(const BufferItem& item) {
     mFlinger->mInterceptor->saveBufferUpdate(layerId, item.mGraphicBuffer->getWidth(),
                                              item.mGraphicBuffer->getHeight(), item.mFrameNumber);
 
+#ifdef QCOM_UM_FAMILY
     if (mFlinger->mSmoMo) {
         smomo::SmomoBufferStats bufferStats;
         bufferStats.id = getSequence();
@@ -481,6 +486,7 @@ void BufferQueueLayer::onFrameAvailable(const BufferItem& item) {
         mLastTimeStamp = frameInfo.current_timestamp;
         mFlinger->mFrameExtn->SetFrameInfo(frameInfo);
     }
+#endif
 
     mFlinger->signalLayerUpdate();
     mConsumer->onBufferAvailable(item);
@@ -553,9 +559,11 @@ void BufferQueueLayer::onFirstRef() {
         mProducer->setMaxDequeuedBufferCount(2);
     }
 
+#ifdef QCOM_UM_FAMILY
     if (mFlinger->mUseLayerExt && mFlinger->mLayerExt) {
         mLayerClass = mFlinger->mLayerExt->GetLayerClass(mName);
     }
+#endif
 }
 
 status_t BufferQueueLayer::setDefaultBufferProperties(uint32_t w, uint32_t h, PixelFormat format) {

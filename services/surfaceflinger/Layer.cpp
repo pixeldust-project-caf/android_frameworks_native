@@ -67,7 +67,10 @@
 #include "MonitoredProducer.h"
 #include "SurfaceFlinger.h"
 #include "TimeStats/TimeStats.h"
+
+#ifdef QCOM_UM_FAMILY
 #include "QtiGralloc.h"
+#endif
 
 #ifdef QTI_DISPLAY_CONFIG_ENABLED
 #include <config/client_interface.h>
@@ -786,8 +789,12 @@ bool Layer::isSecure() const {
 }
 
 bool Layer::isSecureDisplay() const {
+#ifdef QCOM_UM_FAMILY
     sp<const GraphicBuffer> buffer = getBuffer();
     return buffer && (buffer->getUsage() & GRALLOC_USAGE_PRIVATE_SECURE_DISPLAY);
+#else
+    return false;
+#endif
 }
 
 bool Layer::isSecureCamera() const {

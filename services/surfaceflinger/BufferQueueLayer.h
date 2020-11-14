@@ -148,7 +148,9 @@ private:
     std::atomic<bool> mSidebandStreamChanged{false};
 
     sp<ContentsChangedListener> mContentsChangedListener;
+#ifdef QCOM_UM_FAMILY
     nsecs_t mLastTimeStamp = -1;
+#endif
 };
 
 } // namespace android
