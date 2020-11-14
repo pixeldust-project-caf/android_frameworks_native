@@ -25,7 +25,9 @@
 #include <ui/StaticDisplayInfo.h>
 
 #include "DisplayHardware/PowerAdvisor.h"
+#ifdef QCOM_UM_FAMILY
 #include <composer_extn_intf.h>
+#endif
 
 namespace android::compositionengine {
 
@@ -56,8 +58,10 @@ struct DisplayCreationArgs {
     // Debugging. Human readable name for the display.
     std::string name;
 
+#ifdef QCOM_UM_FAMILY
     // Helper library to get next FBT slot.
     composer::DisplayExtnIntf *displayExtnIntf = nullptr;
+#endif
 };
 
 /**
@@ -103,10 +107,13 @@ public:
         return *this;
     }
 
+#ifdef QCOM_UM_FAMILY
     DisplayCreationArgsBuilder& setDisplayExtnIntf(composer::DisplayExtnIntf *displayExtnIntf) {
         mArgs.displayExtnIntf = std::move(displayExtnIntf);
         return *this;
     }
+#endif
+
 private:
     DisplayCreationArgs mArgs;
 };

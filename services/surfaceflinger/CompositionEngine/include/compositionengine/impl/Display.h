@@ -90,7 +90,9 @@ private:
     Hwc2::PowerAdvisor* mPowerAdvisor = nullptr;
     bool mHasScreenshot = false;
     ui::DisplayConnectionType mConnectionType = ui::DisplayConnectionType::Internal;
+#ifdef QCOM_UM_FAMILY
     composer::DisplayExtnIntf *mDisplayExtnIntf = nullptr;
+#endif
     void beginDraw();
     void endDraw();
 };

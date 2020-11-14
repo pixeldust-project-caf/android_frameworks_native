@@ -143,11 +143,13 @@
 #include "android-base/parseint.h"
 #include "android-base/stringprintf.h"
 #include "android-base/strings.h"
-#include <composer_extn_intf.h>
 
+#ifdef QCOM_UM_FAMILY
+#include <composer_extn_intf.h>
 #include "smomo_interface.h"
 #include "QtiGralloc.h"
 #include "layer_extn_intf.h"
+#endif
 
 #ifdef QTI_DISPLAY_CONFIG_ENABLED
 #include <hardware/hwcomposer_defs.h>
@@ -172,7 +174,9 @@ class ClientInterface;
 //#define NO_THREAD_SAFETY_ANALYSIS \
 //    _Pragma("GCC error \"Prefer MAIN_THREAD macros or {Conditional,Timed,Unnecessary}Lock.\"")
 
+#ifdef QCOM_UM_FAMILY
 composer::ComposerExtnLib composer::ComposerExtnLib::g_composer_ext_lib_;
+#endif
 
 #ifdef PHASE_OFFSET_EXTN
 struct ComposerExtnIntf {
@@ -427,6 +431,7 @@ bool callingThreadHasRotateSurfaceFlingerAccess() {
 }
 
 bool SmomoWrapper::init() {
+#ifdef QCOM_UM_FAMILY
     mSmoMoLibHandle = dlopen(SMOMO_LIBRARY_NAME, RTLD_NOW);
     if (!mSmoMoLibHandle) {
         ALOGE("Unable to open SmoMo lib: %s", dlerror());
@@ -453,9 +458,13 @@ bool SmomoWrapper::init() {
     }
 
     return true;
+#else
+    return false;
+#endif
 }
 
 SmomoWrapper::~SmomoWrapper() {
+#ifdef QCOM_UM_FAMILY
     if (mInst) {
         mSmoMoDestroyFunc(mInst);
     }
@@ -463,10 +472,12 @@ SmomoWrapper::~SmomoWrapper() {
     if (mSmoMoLibHandle) {
       dlclose(mSmoMoLibHandle);
     }
+#endif
 }
 
 void SmomoWrapper::setRefreshRates(
         std::unique_ptr<scheduler::RefreshRateConfigs> &refreshRateConfigs) {
+#ifdef QCOM_UM_FAMILY
     std::vector<float> refreshRates;
 
     auto iter = refreshRateConfigs->getAllRefreshRates().cbegin();
@@ -477,9 +488,11 @@ void SmomoWrapper::setRefreshRates(
         ++iter;
     }
     mInst->SetDisplayRefreshRates(refreshRates);
+#endif
 }
 
 bool LayerExtWrapper::init() {
+#ifdef QCOM_UM_FAMILY
     mLayerExtLibHandle = dlopen(LAYER_EXTN_LIBRARY_NAME, RTLD_NOW);
     if (!mLayerExtLibHandle) {
         ALOGE("Unable to open layer ext lib: %s", dlerror());
@@ -506,9 +519,13 @@ bool LayerExtWrapper::init() {
     }
 
     return true;
+#else
+    return false;
+#endif
 }
 
 LayerExtWrapper::~LayerExtWrapper() {
+#ifdef QCOM_UM_FAMILY
     if (mInst) {
         mLayerExtDestroyFunc(mInst);
     }
@@ -516,9 +533,11 @@ LayerExtWrapper::~LayerExtWrapper() {
     if (mLayerExtLibHandle) {
       dlclose(mLayerExtLibHandle);
     }
+#endif
 }
 
 bool DolphinWrapper::init() {
+#ifdef QCOM_UM_FAMILY
     bool succeed = false;
     mDolphinHandle = dlopen("libdolphin.so", RTLD_NOW);
     if (!mDolphinHandle) {
@@ -549,13 +568,19 @@ bool DolphinWrapper::init() {
         }
     }
     return succeed;
+#else
+    return false;
+#endif
 }
 
 DolphinWrapper::~DolphinWrapper() {
+#ifdef QCOM_UM_FAMILY
     if (mDolphinHandle) {
         dlclose(mDolphinHandle);
     }
+#endif
 }
+
 
 SurfaceFlinger::SurfaceFlinger(Factory& factory, SkipInitializationTag)
       : mFactory(factory),
@@ -1170,6 +1195,7 @@ void SurfaceFlinger::init() {
         ALOGE("Run StartPropertySetThread failed!");
     }
 
+#ifdef QCOM_UM_FAMILY
     char smomoProp[PROPERTY_VALUE_MAX];
     property_get("vendor.display.use_smooth_motion", smomoProp, "0");
     if (atoi(smomoProp) && mSmoMo.init()) {
@@ -1219,11 +1245,12 @@ void SurfaceFlinger::init() {
 
     mRETid = getRenderEngine().getRETid();
     mSFTid = gettid();
-
+#endif
     ALOGV("Done initializing");
 }
 
 void SurfaceFlinger::InitComposerExtn() {
+#ifdef QCOM_UM_FAMILY
     mComposerExtnIntf = composer::ComposerExtnLib::GetInstance();
     if (!mComposerExtnIntf) {
         ALOGE("Unable to get composer extension");
@@ -1239,6 +1266,7 @@ void SurfaceFlinger::InitComposerExtn() {
        ALOGI("Unable to create display extension");
     }
     ALOGI("Init: mDisplayExtnIntf: %p", mDisplayExtnIntf);
+#endif
 }
 
 void SurfaceFlinger::startUnifiedDraw() {
@@ -1515,9 +1543,11 @@ void SurfaceFlinger::setDesiredActiveMode(const ActiveModeInfo& info) {
 
     auto refreshRate = mRefreshRateConfigs->getRefreshRateFromModeId(info.modeId);
     mVsyncPeriod = refreshRate.getVsyncPeriod();
+#ifdef QCOM_UM_FAMILY
     if (mDolphinWrapper.dolphinSetVsyncPeriod) {
         mDolphinWrapper.dolphinSetVsyncPeriod(mVsyncPeriod);
     }
+#endif
     ALOGV("setDesiredActiveConfig(%s)", refreshRate.getName().c_str());
 
     std::lock_guard<std::mutex> lock(mActiveModeLock);
@@ -2450,6 +2480,7 @@ nsecs_t SurfaceFlinger::calculateExpectedPresentTime(DisplayStatInfo stats) cons
 }
 
 void SurfaceFlinger::updateFrameScheduler() NO_THREAD_SAFETY_ANALYSIS {
+#ifdef QCOM_UM_FAMILY
     if (!mFrameSchedulerExtnIntf) {
         return;
     }
@@ -2476,16 +2507,18 @@ void SurfaceFlinger::updateFrameScheduler() NO_THREAD_SAFETY_ANALYSIS {
             modulateVsync(&VsyncModulator::onRefreshRateChangeCompleted);
         }
     }
+#endif
 }
 
 void SurfaceFlinger::syncToDisplayHardware() NO_THREAD_SAFETY_ANALYSIS {
     ATRACE_CALL();
-
+#ifdef QCOM_UM_FAMILY
     if (mSmoMo) {
         nsecs_t timestamp = 0;
         bool needResync = mSmoMo->SyncToDisplay(previousFrameFence().fence, &timestamp);
         ALOGV("needResync = %d, timestamp = %" PRId64, needResync, timestamp);
     }
+#endif
 }
 
 void SurfaceFlinger::onMessageReceived(int32_t what, int64_t vsyncId, nsecs_t expectedVSyncTime) {
@@ -3161,9 +3194,9 @@ void SurfaceFlinger::postComposition() {
 
     std::vector<std::string> layerName;
     std::vector<int32_t> layerSequence;
+#ifdef QCOM_UM_FAMILY
     bool layerExtEnabled = (mSplitLayerExt && mLayerExt);
     bool visibleLayersInfo = false;
-
     if (mSmoMo || layerExtEnabled) {
         const auto compositionDisplay = display->getCompositionDisplay();
         compositionDisplay->getVisibleLayerInfo(&layerName, &layerSequence);
@@ -3206,6 +3239,7 @@ void SurfaceFlinger::postComposition() {
 
         setContentFps(is_valid_content_fps ? content_fps : fps);
     }
+#endif
 
 
     // Even though ATRACE_INT64 already checks if tracing is enabled, it doesn't prevent the
@@ -3583,7 +3617,11 @@ sp<DisplayDevice> SurfaceFlinger::setupNewDisplayDeviceInternal(
 
 void SurfaceFlinger::processDisplayAdded(const wp<IBinder>& displayToken,
                                          const DisplayDeviceState& state) {
+#ifdef QCOM_UM_FAMILY
     bool canAllocateHwcForVDS = false;
+#else
+    bool canAllocateHwcForVDS = true;
+#endif
     ui::Size resolution(0, 0);
 
     ui::PixelFormat pixelFormat = static_cast<ui::PixelFormat>(PIXEL_FORMAT_UNKNOWN);
@@ -3613,7 +3651,6 @@ void SurfaceFlinger::processDisplayAdded(const wp<IBinder>& displayToken,
                }
             }
         }
-
     } else {
         // Virtual displays without a surface are dormant:
         // they have external state (layer stack, projection,
@@ -3635,7 +3672,9 @@ void SurfaceFlinger::processDisplayAdded(const wp<IBinder>& displayToken,
     builder.setLayerStackId(state.layerStack);
     builder.setPowerAdvisor(&mPowerAdvisor);
     builder.setName(state.displayName);
+#ifdef QCOM_UM_FAMILY
     builder.setDisplayExtnIntf(mDisplayExtnIntf);
+#endif
     auto compositionDisplay = getCompositionEngine().createDisplay(builder.build());
     compositionDisplay->setLayerCachingEnabled(mLayerCachingEnabled);
 
@@ -4610,12 +4649,13 @@ bool SurfaceFlinger::transactionIsReadyToBeApplied(
                 ATRACE_NAME("hasPendingBuffer");
                 return false;
             }
-
+#ifdef QCOM_UM_FAMILY
             if (mSmoMo) {
                 if (mSmoMo->FrameIsEarly(layer->getSequence(), desiredPresentTime)) {
                     return false;
                 }
             }
+#endif
         }
     }
     return true;
@@ -4741,7 +4781,7 @@ status_t SurfaceFlinger::setTransactionState(
     if (state.transactionCommittedSignal) {
         waitForSynchronousTransaction(*state.transactionCommittedSignal);
     }
-
+#ifdef QCOM_UM_FAMILY
     if (mSmoMo) {
         state.traverseStatesWithBuffers([&](const layer_state_t& state) {
             sp<Layer> layer = fromHandle(state.surface).promote();
@@ -4762,6 +4802,7 @@ status_t SurfaceFlinger::setTransactionState(
             }
         });
     }
+#endif
 
     return NO_ERROR;
 }
@@ -8072,6 +8113,7 @@ status_t SurfaceFlinger::setDesiredDisplayModeSpecsInternal(
     return NO_ERROR;
 }
 
+#ifdef QCOM_UM_FAMILY
 bool SurfaceFlinger::canAllocateHwcDisplayIdForVDS(uint64_t usage) {
     uint64_t flag_mask_pvt_wfd = ~0;
     uint64_t flag_mask_hw_video = ~0;
@@ -8089,6 +8131,11 @@ bool SurfaceFlinger::canAllocateHwcDisplayIdForVDS(uint64_t usage) {
     return (allowHwcForVDS || ((usage & flag_mask_pvt_wfd) &&
             (usage & flag_mask_hw_video)));
 }
+#else
+bool SurfaceFlinger::canAllocateHwcDisplayIdForVDS(uint64_t) {
+    return true;
+}
+#endif
 
 bool SurfaceFlinger::skipColorLayer(const char* layerType) {
     return (sDirectStreaming && !strncmp(layerType, "ColorLayer", strlen("ColorLayer")));
@@ -8547,11 +8594,13 @@ void SurfaceFlinger::notifyRegionSamplingThread() {
 }
 
 void SurfaceFlinger::setContentFps(uint32_t contentFps) {
+#ifdef QCOM_UM_FAMILY
     if (mBootFinished && !mSetActiveModePending) {
         if (mDisplayExtnIntf) {
             mDisplayExtnIntf->SetContentFps(contentFps);
         }
     }
+#endif
 }
 
 bool SurfaceFlinger::isInternalDisplay(const sp<DisplayDevice>& display) {

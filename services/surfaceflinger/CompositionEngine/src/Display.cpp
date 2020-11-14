@@ -75,8 +75,10 @@ void Display::setConfiguration(const compositionengine::DisplayCreationArgs& arg
     }
 #endif
 
+#ifdef QCOM_UM_FAMILY
     mDisplayExtnIntf = args.displayExtnIntf;
     ALOGI("Display::setConfiguration: mDisplayExtnIntf: %p", mDisplayExtnIntf);
+#endif
 }
 
 bool Display::isValid() const {
@@ -285,9 +287,11 @@ void Display::chooseCompositionStrategy() {
 
 void Display::beginDraw() {
     ATRACE_CALL();
+#ifdef QCOM_UM_FAMILY
     if (mDisplayExtnIntf == nullptr) {
         return;
     }
+#endif
     const auto physicalDisplayId = PhysicalDisplayId::tryCast(mId);
     if (!physicalDisplayId.has_value() || mIsVirtual) {
         return;

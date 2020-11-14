@@ -29,8 +29,9 @@
 #include "MessageQueue.h"
 #include "SurfaceFlinger.h"
 
+#ifdef QCOM_UM_FAMILY
 #include "smomo_interface.h"
-
+#endif
 namespace android::impl {
 
 void MessageQueue::Handler::dispatchRefresh() {
@@ -124,11 +125,11 @@ void MessageQueue::vsyncCallback(nsecs_t vsyncTime, nsecs_t targetWakeupTime, ns
     if (mFlinger->mDolphinWrapper.dolphinTrackVsyncSignal) {
         mFlinger->mDolphinWrapper.dolphinTrackVsyncSignal(vsyncTime, targetWakeupTime, readyTime);
     }
-
+#ifdef QCOM_UM_FAMILY
     if (mFlinger->mSmoMo) {
         mFlinger->mSmoMo->OnVsync(vsyncTime);
     }
-
+#endif
     mHandler->dispatchInvalidate(mVsync.tokenManager->generateTokenForPredictions(
                                          {targetWakeupTime, readyTime, vsyncTime}),
                                  vsyncTime);

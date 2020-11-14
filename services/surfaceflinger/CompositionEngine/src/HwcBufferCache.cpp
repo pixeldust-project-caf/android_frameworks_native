@@ -24,14 +24,18 @@
 #include <ui/GraphicBuffer.h>
 #include <cstdlib>
 #include <cutils/properties.h>
+#ifdef QCOM_UM_FAMILY
 #include <QtiGrallocDefs.h>
+#endif
 
 // TODO(b/129481165): remove the #pragma below and fix conversion issues
 #pragma clang diagnostic pop // ignored "-Wconversion"
 
+#ifdef QCOM_UM_FAMILY
 constexpr int MAX_VIDEO_WIDTH = 5760;
 constexpr int MAX_VIDEO_HEIGHT = 2160;
 constexpr int MAX_NUM_SLOTS_FOR_WIDE_VIDEOS = 4;
+#endif
 
 namespace android::compositionengine::impl {
 
@@ -42,6 +46,7 @@ HwcBufferCache::HwcBufferCache() {
     mReduceSlotsForWideVideo = atoi(value);
 }
 
+#ifdef QCOM_UM_FAMILY
 //TODO: Move to common location
 static bool formatIsYuv(const PixelFormat format) {
     switch (format) {
@@ -78,6 +83,7 @@ static bool formatIsYuv(const PixelFormat format) {
             return false;
     }
 }
+#endif
 
 void HwcBufferCache::getHwcBuffer(int slot, const sp<GraphicBuffer>& buffer, uint32_t* outSlot,
                                   sp<GraphicBuffer>* outBuffer) {
@@ -94,12 +100,14 @@ void HwcBufferCache::getHwcBuffer(int slot, const sp<GraphicBuffer>& buffer, uin
     bool widevideo = false;
     uint32_t numSlots = kMaxLayerBufferCount;
 
+#ifdef QCOM_UM_FAMILY
     // Workaround to reduce slots for 8k buffers
     if ((width * height > MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT) && mReduceSlotsForWideVideo &&
         formatIsYuv(format)) {
         numSlots = MAX_NUM_SLOTS_FOR_WIDE_VIDEOS;
         widevideo = true;
     }
+#endif
     if (slot == BufferQueue::INVALID_BUFFER_SLOT || slot < 0 ||
         static_cast<uint32_t>(slot) >= numSlots) {
         *outSlot = 0;
