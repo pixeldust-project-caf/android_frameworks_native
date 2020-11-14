@@ -126,12 +126,14 @@
 #include "TimeStats/TimeStats.h"
 #include "android-base/parseint.h"
 #include "android-base/stringprintf.h"
-#include <composer_extn_intf.h>
 
+#ifdef QCOM_UM_FAMILY
+#include <composer_extn_intf.h>
 #include "frame_extn_intf.h"
 #include "smomo_interface.h"
 #include "QtiGralloc.h"
 #include "layer_extn_intf.h"
+#endif
 
 #ifdef QTI_DISPLAY_CONFIG_ENABLED
 #include <config/client_interface.h>
@@ -155,7 +157,9 @@ class ClientInterface;
 //#define NO_THREAD_SAFETY_ANALYSIS \
 //    _Pragma("GCC error \"Prefer MAIN_THREAD macros or {Conditional,Timed,Unnecessary}Lock.\"")
 
+#ifdef QCOM_UM_FAMILY
 composer::ComposerExtnLib composer::ComposerExtnLib::g_composer_ext_lib_;
+#endif
 
 #ifdef PHASE_OFFSET_EXTN
 struct ComposerExtnIntf {
@@ -338,6 +342,7 @@ std::string decodeDisplayColorSetting(DisplayColorSetting displayColorSetting) {
 SurfaceFlingerBE::SurfaceFlingerBE() : mHwcServiceName(getHwcServiceName()) {}
 
 bool SmomoWrapper::init() {
+#ifdef QCOM_UM_FAMILY
     mSmoMoLibHandle = dlopen(SMOMO_LIBRARY_NAME, RTLD_NOW);
     if (!mSmoMoLibHandle) {
         ALOGE("Unable to open SmoMo lib: %s", dlerror());
@@ -364,9 +369,13 @@ bool SmomoWrapper::init() {
     }
 
     return true;
+#else
+    return false;
+#endif
 }
 
 SmomoWrapper::~SmomoWrapper() {
+#ifdef QCOM_UM_FAMILY
     if (mInst) {
         mSmoMoDestroyFunc(mInst);
     }
@@ -374,9 +383,11 @@ SmomoWrapper::~SmomoWrapper() {
     if (mSmoMoLibHandle) {
       dlclose(mSmoMoLibHandle);
     }
+#endif
 }
 
 bool LayerExtWrapper::init() {
+#ifdef QCOM_UM_FAMILY
     mLayerExtLibHandle = dlopen(LAYER_EXTN_LIBRARY_NAME, RTLD_NOW);
     if (!mLayerExtLibHandle) {
         ALOGE("Unable to open layer ext lib: %s", dlerror());
@@ -403,9 +414,13 @@ bool LayerExtWrapper::init() {
     }
 
     return true;
+#else
+    return false;
+#endif
 }
 
 LayerExtWrapper::~LayerExtWrapper() {
+#ifdef QCOM_UM_FAMILY
     if (mInst) {
         mLayerExtDestroyFunc(mInst);
     }
@@ -413,6 +428,7 @@ LayerExtWrapper::~LayerExtWrapper() {
     if (mLayerExtLibHandle) {
       dlclose(mLayerExtLibHandle);
     }
+#endif
 }
 
 SurfaceFlinger::SurfaceFlinger(Factory& factory, SkipInitializationTag)
@@ -583,6 +599,7 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
     mKernelIdleTimerEnabled = mSupportKernelIdleTimer = sysprop::support_kernel_idle_timer(false);
     base::SetProperty(KERNEL_IDLE_TIMER_PROP, mKernelIdleTimerEnabled ? "true" : "false");
 
+#ifdef QCOM_UM_FAMILY
     mDolphinHandle = dlopen("libdolphin.so", RTLD_NOW);
     if (!mDolphinHandle) {
         ALOGW("Unable to open libdolphin.so: %s.", dlerror());
@@ -604,7 +621,11 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
         if (!mDolphinFuncsEnabled)
             dlclose(mDolphinHandle);
     }
+#else
+    mDolphinHandle = nullptr;
+#endif
 
+#ifdef QCOM_UM_FAMILY
     mFrameExtnLibHandle = dlopen(EXTENSION_LIBRARY_NAME, RTLD_NOW);
     if (!mFrameExtnLibHandle) {
         ALOGE("Unable to open libframeextension.so: %s.", dlerror());
@@ -626,13 +647,18 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
             dlclose(mFrameExtnLibHandle);
         }
     }
+#else
+    mFrameExtnLibHandle = nullptr;
+#endif
 }
 
 SurfaceFlinger::~SurfaceFlinger() {
+#ifdef QCOM_UM_FAMILY
     if (mDolphinFuncsEnabled)
         dlclose(mDolphinHandle);
     if (mFrameExtn)
         dlclose(mFrameExtnLibHandle);
+#endif
 }
 
 void SurfaceFlinger::onFirstRef() {
@@ -950,6 +976,7 @@ void SurfaceFlinger::init() {
         ALOGE("Run StartPropertySetThread failed!");
     }
 
+#ifdef QCOM_UM_FAMILY
     char smomoProp[PROPERTY_VALUE_MAX];
     property_get("vendor.display.use_smooth_motion", smomoProp, "0");
     if (atoi(smomoProp) && mSmoMo.init()) {
@@ -1000,6 +1027,7 @@ void SurfaceFlinger::init() {
 
         createPhaseOffsetExtn();
     }
+#endif
     ALOGV("Done initializing");
 }
 
@@ -2159,6 +2187,7 @@ nsecs_t SurfaceFlinger::calculateExpectedPresentTime(nsecs_t now) const {
 }
 
 void SurfaceFlinger::updateFrameScheduler() NO_THREAD_SAFETY_ANALYSIS {
+#ifdef QCOM_UM_FAMILY
     if (!mFrameSchedulerExtnIntf) {
         return;
     }
@@ -2185,10 +2214,12 @@ void SurfaceFlinger::updateFrameScheduler() NO_THREAD_SAFETY_ANALYSIS {
             mVSyncModulator->onRefreshRateChangeCompleted();
         }
     }
+#endif
 }
 
 void SurfaceFlinger::onMessageReceived(int32_t what, nsecs_t expectedVSyncTime) {
     ATRACE_CALL();
+#ifdef QCOM_UM_FAMILY
     switch (what) {
         case MessageQueue::INVALIDATE: {
             onMessageInvalidate(expectedVSyncTime);
@@ -2208,6 +2239,14 @@ void SurfaceFlinger::onMessageReceived(int32_t what, nsecs_t expectedVSyncTime) 
             break;
         }
     }
+#else
+    switch (what) {
+        case MessageQueue::INVALIDATE: {
+            onMessageInvalidate(expectedVSyncTime);
+            break;
+        }
+    }
+#endif
 }
 
 void SurfaceFlinger::onMessageInvalidate(nsecs_t expectedVSyncTime) {
@@ -2293,6 +2332,7 @@ void SurfaceFlinger::onMessageInvalidate(nsecs_t expectedVSyncTime) {
         }
     }
 
+#ifdef QCOM_UM_FAMILY
     if (mDolphinFuncsEnabled) {
         int maxQueuedFrames = 0;
         mDrawingState.traverseInZOrder([&](Layer* layer) {
@@ -2330,6 +2370,7 @@ void SurfaceFlinger::onMessageInvalidate(nsecs_t expectedVSyncTime) {
             mNumIdle++;
         }
     }
+#endif
 
     // Our jank window is always at least 100ms since we missed a
     // frame...
@@ -2416,11 +2457,13 @@ void SurfaceFlinger::onMessageInvalidate(nsecs_t expectedVSyncTime) {
         }
         signalRefresh();
     }
+#ifdef QCOM_UM_FAMILY
     if (mFrameExtn && mDolphinFuncsEnabled) {
         if (!refreshNeeded) {
             mDolphinScaling(mNumIdle, mMaxQueuedFrames);
         }
     }
+#endif
 }
 
 bool SurfaceFlinger::handleMessageTransaction() {
@@ -2784,6 +2827,7 @@ void SurfaceFlinger::postComposition()
         mRegionSamplingThread->notifyNewContent();
     }
 
+#ifdef QCOM_UM_FAMILY
     if (mSplitLayerExt && mLayerExt) {
         std::vector<std::string> layerInfo;
         mDrawingState.traverse([&](Layer* layer) {
@@ -2819,6 +2863,7 @@ void SurfaceFlinger::postComposition()
         int content_fps = mSmoMo->GetFrameRate();
         setContentFps((content_fps > 0) ? content_fps : fps);
     }
+#endif
 
 
     // Even though ATRACE_INT64 already checks if tracing is enabled, it doesn't prevent the
@@ -3140,7 +3185,11 @@ void SurfaceFlinger::processDisplayAdded(const wp<IBinder>& displayToken,
                                          const DisplayDeviceState& state) {
     int width = 0;
     int height = 0;
+#ifdef QCOM_UM_FAMILY
     bool canAllocateHwcForVDS = false;
+#else
+    bool canAllocateHwcForVDS = true;
+#endif
     ui::PixelFormat pixelFormat = static_cast<ui::PixelFormat>(PIXEL_FORMAT_UNKNOWN);
     if (state.physical) {
         const auto& activeConfig =
@@ -3157,6 +3206,7 @@ void SurfaceFlinger::processDisplayAdded(const wp<IBinder>& displayToken,
         status = state.surface->query(NATIVE_WINDOW_FORMAT, &intPixelFormat);
         ALOGE_IF(status != NO_ERROR, "Unable to query format (%d)", status);
         pixelFormat = static_cast<ui::PixelFormat>(intPixelFormat);
+#ifdef QCOM_UM_FAMILY
         if (mUseHwcVirtualDisplays || getHwComposer().isUsingVrComposer()) {
             if (maxVirtualDisplaySize == 0 ||
                 ((uint64_t)width <= maxVirtualDisplaySize &&
@@ -3170,7 +3220,7 @@ void SurfaceFlinger::processDisplayAdded(const wp<IBinder>& displayToken,
                }
             }
         }
-
+#endif
     } else {
         // Virtual displays without a surface are dormant:
         // they have external state (layer stack, projection,
@@ -6876,6 +6926,7 @@ status_t SurfaceFlinger::setDesiredDisplayConfigSpecsInternal(
     return NO_ERROR;
 }
 
+#ifdef QCOM_UM_FAMILY
 bool SurfaceFlinger::canAllocateHwcDisplayIdForVDS(uint64_t usage) {
     uint64_t flag_mask_pvt_wfd = ~0;
     uint64_t flag_mask_hw_video = ~0;
@@ -6893,6 +6944,11 @@ bool SurfaceFlinger::canAllocateHwcDisplayIdForVDS(uint64_t usage) {
     return (allowHwcForVDS || ((usage & flag_mask_pvt_wfd) &&
             (usage & flag_mask_hw_video)));
 }
+#else
+bool SurfaceFlinger::canAllocateHwcDisplayIdForVDS(uint64_t) {
+    return true;
+}
+#endif
 
 bool SurfaceFlinger::skipColorLayer(const char* layerType) {
     return (sDirectStreaming && !strncmp(layerType, "ColorLayer", strlen("ColorLayer")));
@@ -7176,11 +7232,13 @@ void SurfaceFlinger::enableRefreshRateOverlay(bool enable) {
 }
 
 void SurfaceFlinger::setContentFps(uint32_t contentFps) {
+#ifdef QCOM_UM_FAMILY
     if (mBootFinished && !mSetActiveConfigPending) {
         if (mDisplayExtnIntf) {
             mDisplayExtnIntf->SetContentFps(contentFps);
         }
     }
+#endif
 }
 
 bool SurfaceFlinger::isInternalDisplay(const sp<DisplayDevice>& display) {
