@@ -32,12 +32,21 @@
 #include <gui/BufferQueue.h>
 #include <hidl/HidlTransportSupport.h>
 #include <hidl/HidlTransportUtils.h>
+#include <vendor/qti/hardware/display/composer/3.0/IQtiComposerClient.h>
+
+#ifdef QTI_DISPLAY_CONFIG_ENABLED
+#include <config/client_interface.h>
+namespace DisplayConfig {
+class ClientInterface;
+}
+#endif
 
 namespace android {
 
 using hardware::Return;
 using hardware::hidl_vec;
 using hardware::hidl_handle;
+using vendor::qti::hardware::display::composer::V3_0::IQtiComposerClient;
 
 namespace Hwc2 {
 
@@ -117,6 +126,16 @@ Error unwrapRet(Return<Error>& ret)
 
 namespace impl {
 
+void Composer::CommandWriter::setLayerType(uint32_t type)
+{
+    constexpr uint16_t kSetLayerTypeLength = 1;
+    beginCommand(static_cast<V2_1::IComposerClient::Command>(
+                         IQtiComposerClient::Command::SET_LAYER_TYPE),
+                 kSetLayerTypeLength);
+    write(type);
+    endCommand();
+}
+
 #if defined(USE_VR_COMPOSER) && USE_VR_COMPOSER
 Composer::CommandWriter::CommandWriter(uint32_t initialMaxSize)
     : CommandWriterBase(initialMaxSize) {}
@@ -170,6 +189,16 @@ void Composer::CommandWriter::writeBufferMetadata(
 }
 #endif // defined(USE_VR_COMPOSER) && USE_VR_COMPOSER
 
+void Composer::CommandWriter::setDisplayElapseTime(uint64_t time)
+{
+    constexpr uint16_t kSetDisplayElapseTimeLength = 2;
+    beginCommand(static_cast<V2_1::IComposerClient::Command>(
+                         IQtiComposerClient::Command::SET_DISPLAY_ELAPSE_TIME),
+                 kSetDisplayElapseTimeLength);
+    write64(time);
+    endCommand();
+}
+
 Composer::Composer(const std::string& serviceName)
     : mWriter(kWriterInitialSize),
       mIsUsingVrComposer(serviceName == std::string("vr"))
@@ -215,6 +244,29 @@ Composer::Composer(const std::string& serviceName)
     if (mClient == nullptr) {
         LOG_ALWAYS_FATAL("failed to create composer client");
     }
+
+     // On successful creation of composer client only AllowIdleFallback
+#ifdef QTI_DISPLAY_CONFIG_ENABLED
+    if (mClient) {
+        ::DisplayConfig::ClientInterface *mDisplayConfigIntf = nullptr;
+        ::DisplayConfig::ClientInterface::Create("SurfaceFlinger"+std::to_string(0),
+                                                        nullptr, &mDisplayConfigIntf);
+        if (mDisplayConfigIntf) {
+#ifdef DISPLAY_CONFIG_API_LEVEL_2
+            std::string value = "";
+            std::string idle_fallback_prop = "enable_allow_idle_fallback";
+            int ret = mDisplayConfigIntf->GetDebugProperty(idle_fallback_prop, &value);
+            ALOGI("enable_allow_idle_fallback, ret:%d value:%s", ret, value.c_str());
+            if (!ret && (value == "1")) {
+                if(mDisplayConfigIntf->AllowIdleFallback()) {
+                    ALOGW("failed to set Idle time");
+                }
+            }
+#endif
+            ::DisplayConfig::ClientInterface::Destroy(mDisplayConfigIntf);
+        }
+    }
+#endif
 
 #if defined(USE_VR_COMPOSER) && USE_VR_COMPOSER
     if (mIsUsingVrComposer) {
@@ -642,6 +694,13 @@ Error Composer::setOutputBuffer(Display display, const native_handle_t* buffer,
     return Error::NONE;
 }
 
+Error Composer::setDisplayElapseTime(Display display, uint64_t timeStamp)
+{
+    mWriter.selectDisplay(display);
+    mWriter.setDisplayElapseTime(timeStamp);
+    return Error::NONE;
+}
+
 Error Composer::setPowerMode(Display display, IComposerClient::PowerMode mode) {
     Return<Error> ret(Error::UNSUPPORTED);
     if (mClient_2_2) {
@@ -870,6 +929,19 @@ Error Composer::setLayerInfo(Display display, Layer layer, uint32_t, uint32_t) {
     return Error::NONE;
 }
 #endif // defined(USE_VR_COMPOSER) && USE_VR_COMPOSER
+
+Error Composer::setLayerType(Display display, Layer layer, uint32_t type)
+{
+    if (mClient_2_4) {
+        if (sp<IQtiComposerClient> qClient = IQtiComposerClient::castFrom(mClient_2_4)) {
+            mWriter.selectDisplay(display);
+            mWriter.selectLayer(layer);
+            mWriter.setLayerType(type);
+        }
+    }
+
+    return Error::NONE;
+}
 
 Error Composer::execute()
 {

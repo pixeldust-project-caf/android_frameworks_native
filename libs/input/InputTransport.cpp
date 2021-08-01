@@ -610,7 +610,7 @@ bool InputConsumer::isTouchResamplingEnabled() {
 
 status_t InputConsumer::consume(InputEventFactoryInterface* factory, bool consumeBatches,
                                 nsecs_t frameTime, uint32_t* outSeq, InputEvent** outEvent,
-                                    int* motionEventType, int* touchMoveNumber, bool* flag) {
+                                int* motionEventType, int* touchMoveNumber, bool* flag) {
     if (DEBUG_TRANSPORT_ACTIONS) {
         ALOGD("channel '%s' consumer ~ consume: consumeBatches=%s, frameTime=%" PRId64,
               mChannel->getName().c_str(), toString(consumeBatches), frameTime);

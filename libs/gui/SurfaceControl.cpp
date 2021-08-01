@@ -39,6 +39,8 @@
 #include <gui/SurfaceComposerClient.h>
 #include <gui/SurfaceControl.h>
 
+#include "dlfcn.h"
+
 namespace android {
 
 // ============================================================================
@@ -195,6 +197,5 @@ sp<SurfaceControl> SurfaceControl::readFromParcel(const Parcel* parcel) {
                               handle.get(), interface_cast<IGraphicBufferProducer>(gbp),
                                transformHint);
 }
-
 // ----------------------------------------------------------------------------
 }; // namespace android
