@@ -61,7 +61,6 @@ cc_library {
     name: "libcompositionengine",
     defaults: [
         "libcompositionengine_defaults",
-        "surfaceflinger_udfps_lib_defaults",
     ],
     srcs: [
         "src/planner/CachedSet.cpp",
