@@ -1186,6 +1186,7 @@ void SurfaceFlinger::init() {
 #endif
 
     startUnifiedDraw();
+#endif
     ALOGV("Done initializing");
 }
 

@@ -573,11 +573,11 @@ bool BufferLayer::latchBuffer(bool& recomputeVisibleRegions, nsecs_t latchTime,
     if (oldOpacity != isOpaque(s)) {
         recomputeVisibleRegions = true;
     }
-
+#ifdef QCOM_UM_FAMILY
     if (mFlinger->mSmoMo) {
         mFlinger->mSmoMo->SetPresentTime(getSequence(), mBufferInfo.mDesiredPresentTime);
     }
-
+#endif
     return true;
 }
 
