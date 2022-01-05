@@ -1008,6 +1008,9 @@ void SurfaceFlinger::bootFinished() {
     }));
 
     setupDisplayExtnFeatures();
+
+    mRETid = getRenderEngine().getRETid();
+    mSFTid = gettid();
 }
 
 uint32_t SurfaceFlinger::getNewTexture() {
@@ -1183,10 +1186,6 @@ void SurfaceFlinger::init() {
 #endif
 
     startUnifiedDraw();
-
-    mRETid = getRenderEngine().getRETid();
-    mSFTid = gettid();
-#endif
     ALOGV("Done initializing");
 }
 
@@ -1508,6 +1507,7 @@ void SurfaceFlinger::setDesiredActiveMode(const ActiveModeInfo& info) {
         // Initiate a mode change.
         mDesiredActiveModeChanged = true;
         mDesiredActiveMode = info;
+        display->resetVsyncPeriod();
 
         // This will trigger HWC refresh without resetting the idle timer.
         repaintEverythingForHWC();
@@ -1522,6 +1522,7 @@ void SurfaceFlinger::setDesiredActiveMode(const ActiveModeInfo& info) {
         mScheduler->setModeChangePending(true);
     }
     setContentFps(static_cast<uint32_t>(refreshRate.getFps().getValue()));
+    mUiLayerFrameCount = 0;
 }
 
 status_t SurfaceFlinger::setActiveMode(const sp<IBinder>& displayToken, int modeId) {
@@ -1630,7 +1631,8 @@ void SurfaceFlinger::desiredActiveModeChangeDone() {
     clearDesiredActiveModeState();
 
     const auto refreshRate = getDefaultDisplayDeviceLocked()->getMode(modeId)->getFps();
-    mScheduler->resyncToHardwareVsync(true, refreshRate.getPeriodNsecs());
+    mScheduler->resyncToHardwareVsync(true, getCurrentVsyncSource()->isPrimary() ?
+        refreshRate.getPeriodNsecs() : getVsyncPeriodFromHWC());
     updatePhaseConfiguration(refreshRate);
 }
 
@@ -2217,6 +2219,33 @@ nsecs_t SurfaceFlinger::getVsyncPeriodFromHWC() const {
     }
 
     return 0;
+}
+
+sp<DisplayDevice> SurfaceFlinger::getCurrentVsyncSource() {
+    Mutex::Autolock lock(mStateLock);
+    if (mNextVsyncSource) {
+        return mNextVsyncSource;
+    } else if (mActiveVsyncSource) {
+        return mActiveVsyncSource;
+    }
+
+    return getDefaultDisplayDeviceLocked();
+}
+
+nsecs_t SurfaceFlinger::getVsyncPeriodFromHWCcb() {
+    Mutex::Autolock lock(mStateLock);
+    auto display = getDefaultDisplayDeviceLocked();
+    if (mNextVsyncSource) {
+        display = mNextVsyncSource;
+    } else if (mActiveVsyncSource) {
+        display = mActiveVsyncSource;
+    }
+
+    if (display && !display->isPrimary()) {
+        return display->getVsyncPeriodFromHWC();
+    }
+
+    return mRefreshRateConfigs->getCurrentRefreshRate().getVsyncPeriod();
 }
 
 void SurfaceFlinger::onComposerHalVsync(hal::HWDisplayId hwcDisplayId, int64_t timestamp,
@@ -2832,13 +2861,17 @@ void SurfaceFlinger::setDisplayAnimating() {
         if (!IsDisplayExternalOrVirtual(displayDevice)) {
            continue;
         }
-        uint32_t hwcDisplayId;
-        getHwcDisplayId(displayDevice, &hwcDisplayId);
+        uint32_t hwcDisplayId = 0;
+        if (!getHwcDisplayId(displayDevice, &hwcDisplayId)) {
+            ALOGW("Rot-anim failed to get HWC DisplayID for display '%s'.",
+                  displayDevice->getDebugName().c_str());
+            continue;
+        }
         if (mDisplayConfigIntf && (hasScreenshot != mHasScreenshot)) {
            mDisplayConfigIntf->SetDisplayAnimating(hwcDisplayId, hasScreenshot);
-           mHasScreenshot = hasScreenshot;
         }
     }
+    mHasScreenshot = hasScreenshot;
 #endif
 }
 
@@ -3036,7 +3069,8 @@ void SurfaceFlinger::postComposition() {
     mTransactionCallbackInvoker.addPresentFence(mPreviousPresentFences[0].fence);
     mTransactionCallbackInvoker.sendCallbacks();
 
-    if (display && display->isPrimary() && display->getPowerMode() == hal::PowerMode::ON &&
+    if (vSyncSource && vSyncSource == getCurrentVsyncSource() &&
+        vSyncSource->getPowerMode() == hal::PowerMode::ON &&
         mPreviousPresentFences[0].fenceTime->isValid()) {
         mScheduler->addPresentFence(mPreviousPresentFences[0].fenceTime);
     }
@@ -3158,11 +3192,16 @@ void SurfaceFlinger::postComposition() {
         int content_fps = mSmoMo->GetFrameRate();
 
         bool is_valid_content_fps = false;
-        if ((content_fps > 0) && (mLayersWithQueuedFrames.size() == 1)) {
-            is_valid_content_fps = mSmomoContentFpsEnabled;
-            mSmomoContentFpsEnabled = true;
+        if (content_fps > 0) {
+            if (mLayersWithQueuedFrames.size() > 1) {
+                mUiLayerFrameCount++;
+            } else {
+                mUiLayerFrameCount = 0;
+            }
+
+            is_valid_content_fps = (mUiLayerFrameCount < fps) ? true : false;
         } else {
-            mSmomoContentFpsEnabled = false;
+            mUiLayerFrameCount = 0;
         }
 
         setContentFps(is_valid_content_fps ? content_fps : fps);
@@ -3438,14 +3477,18 @@ void SurfaceFlinger::processDisplayHotplugEventsLocked() {
                 updateInternalDisplaysPresentationMode();
             }
         }
-
+        uint32_t hwcDisplayId = static_cast<uint32_t>(event.hwcDisplayId);
+        bool isConnected = (event.connection == hal::Connection::CONNECTED);
         if (isDisplayExtnEnabled() && isInternalDisplay) {
-            uint32_t hwcDisplayId = static_cast<uint32_t>(event.hwcDisplayId);
-            bool isConnected = (event.connection == hal::Connection::CONNECTED);
             auto activeConfigId = getHwComposer().getActiveMode(displayId);
             LOG_ALWAYS_FATAL_IF(!activeConfigId, "HWC returned no active config");
             updateDisplayExtension(hwcDisplayId, *activeConfigId, isConnected);
         }
+#if defined(QTI_UNIFIED_DRAW) && defined(UNIFIED_DRAW_EXT)
+        if (mDisplayExtnIntf && !isConnected && !isInternalDisplay) {
+            mDisplayExtnIntf->EndUnifiedDraw(hwcDisplayId);
+        }
+#endif
         processDisplayChangesLocked();
     }
 
@@ -3711,7 +3754,6 @@ void SurfaceFlinger::processDisplayRemoved(const wp<IBinder>& displayToken) {
     }
 
     mDisplays.erase(displayToken);
-
     if (display && display->isVirtual()) {
         static_cast<void>(schedule([display = std::move(display)] {
             // Destroy the display without holding the mStateLock.
@@ -3740,6 +3782,7 @@ void SurfaceFlinger::processDisplayChanged(const wp<IBinder>& displayToken,
         getRenderEngine().cleanFramebufferCache();
 
         if (const auto display = getDisplayDeviceLocked(displayToken)) {
+            mDisplaysList.remove(display);
             display->disconnect();
             if (display->isVirtual()) {
                 releaseVirtualDisplay(display->getVirtualId());
@@ -5330,6 +5373,35 @@ status_t SurfaceFlinger::createLayer(const String8& name, const sp<Client>& clie
             "Expected only one of parentLayer or parentHandle to be non-null. "
             "Programmer error?");
 
+#ifdef QTI_DISPLAY_CONFIG_ENABLED
+    // Flag rotation animation as early as possible.
+    if (Layer::isScreenshotName(std::string(name))) {
+        // Rotation animation present.
+        bool signal_refresh = true;
+        Mutex::Autolock lock(mStateLock);  // Needed for mDisplays and signalRefresh().
+        for (const auto& [token, displayDevice] : mDisplays) {
+            if (!IsDisplayExternalOrVirtual(displayDevice)) {
+                continue;
+            }
+            uint32_t hwcDisplayId = 0;
+            if (mDisplayConfigIntf && (true != mHasScreenshot)) {
+                if (!getHwcDisplayId(displayDevice, &hwcDisplayId)) {
+                    ALOGW("Rot-anim failed to get HWC DisplayID for display '%s'.",
+                          displayDevice->getDebugName().c_str());
+                    continue;
+                }
+                mDisplayConfigIntf->SetDisplayAnimating(hwcDisplayId, true);
+                if (signal_refresh) {
+                    // Request composition cycle once.
+                    signalRefresh();
+                }
+                signal_refresh = false;
+            }
+        }
+        mHasScreenshot = true;
+    }
+#endif
+
     status_t result = NO_ERROR;
 
     sp<Layer> layer;
@@ -5796,6 +5868,8 @@ status_t SurfaceFlinger::doDump(int fd, const DumpArgs& args, bool asProto) {
             TimedLock lock(mStateLock, s2ns(1), __FUNCTION__);
             if (!lock.locked()) {
                 StringAppendF(&result, "Dumping without lock after timeout: %s (%d)\n",
+                              strerror(-lock.status), lock.status);
+                ALOGW("Dumping without lock after timeout: %s (%d)",
                               strerror(-lock.status), lock.status);
             }
 
@@ -7683,6 +7757,16 @@ status_t SurfaceFlinger::captureScreenCommon(RenderAreaFuture renderAreaFuture,
                                 });
                                 return protectedLayerFound;
                             }).get();
+    }
+
+    // Surface flinger captures individual screen shot for each display
+    // This will lead consumption of high GPU secure memory in case
+    // of secure video use cases and cause out of memory.
+    {
+        Mutex::Autolock lock(mStateLock);
+        if(mDisplays.size() > 1) {
+           hasProtectedLayer = false;
+        }
     }
 
     const uint32_t usage = GRALLOC_USAGE_HW_COMPOSER | GRALLOC_USAGE_HW_RENDER |

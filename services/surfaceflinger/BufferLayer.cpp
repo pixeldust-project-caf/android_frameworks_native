@@ -457,11 +457,7 @@ bool BufferLayer::onPostComposition(const DisplayDevice* display,
                                                FrameTracer::FrameEvent::PRESENT_FENCE);
         mFrameTracker.setActualPresentTime(actualPresentTime);
     }
-#ifdef QCOM_UM_FAMILY
-    if (mFlinger->mSmoMo) {
-        mFlinger->mSmoMo->SetPresentTime(layerId, mBufferInfo.mDesiredPresentTime);
-    }
-#endif
+
     mFrameTracker.advanceFrame();
     mBufferInfo.mFrameLatencyNeeded = false;
     return true;
@@ -576,6 +572,10 @@ bool BufferLayer::latchBuffer(bool& recomputeVisibleRegions, nsecs_t latchTime,
 
     if (oldOpacity != isOpaque(s)) {
         recomputeVisibleRegions = true;
+    }
+
+    if (mFlinger->mSmoMo) {
+        mFlinger->mSmoMo->SetPresentTime(getSequence(), mBufferInfo.mDesiredPresentTime);
     }
 
     return true;
