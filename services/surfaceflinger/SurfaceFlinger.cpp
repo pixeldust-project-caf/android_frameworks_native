@@ -1160,6 +1160,7 @@ void SurfaceFlinger::InitComposerExtn() {
 }
 
 void SurfaceFlinger::InitSmomo() {
+#ifdef QCOM_UM_FAMILY
     char smomoProp[PROPERTY_VALUE_MAX];
     property_get("vendor.display.use_smooth_motion", smomoProp, "0");
     if (!atoi(smomoProp)) {
@@ -1179,6 +1180,7 @@ void SurfaceFlinger::InitSmomo() {
 
         ALOGI("SmoMo is enabled");
     }
+#endif
 }
 
 void SurfaceFlinger::startUnifiedDraw() {
