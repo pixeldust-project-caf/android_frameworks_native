@@ -3215,6 +3215,7 @@ void SurfaceFlinger::postComposition() {
 }
 
 void SurfaceFlinger::UpdateSmomoState() {
+#ifdef QCOM_UM_FAMILY
     ATRACE_NAME("SmoMoUpdateState");
     Mutex::Autolock lock(mStateLock);
     // Check if smomo instances exist.
@@ -3270,6 +3271,7 @@ void SurfaceFlinger::UpdateSmomoState() {
     for (auto &instance : mSmomoInstances) {
         instance.smoMo->SetRefreshRateChangeStatus((numActiveDisplays == 1));
     }
+#endif
 }
 
 FloatRect SurfaceFlinger::getLayerClipBoundsForDisplay(const DisplayDevice& displayDevice) const {
