@@ -125,9 +125,17 @@ void MessageQueue::vsyncCallback(nsecs_t vsyncTime, nsecs_t targetWakeupTime, ns
     if (mFlinger->mDolphinWrapper.dolphinTrackVsyncSignal) {
         mFlinger->mDolphinWrapper.dolphinTrackVsyncSignal(vsyncTime, targetWakeupTime, readyTime);
     }
+
 #ifdef QCOM_UM_FAMILY
-    if (mFlinger->mSmoMo) {
-        mFlinger->mSmoMo->OnVsync(vsyncTime);
+    SmomoIntf *smoMo = nullptr;
+    for (auto &instance: mFlinger->mSmomoInstances) {
+        if (instance.displayId == 0) {
+            smoMo = instance.smoMo;
+            break;
+        }
+    }
+    if (smoMo) {
+        smoMo->OnVsync(vsyncTime);
     }
 #endif
     mHandler->dispatchInvalidate(mVsync.tokenManager->generateTokenForPredictions(

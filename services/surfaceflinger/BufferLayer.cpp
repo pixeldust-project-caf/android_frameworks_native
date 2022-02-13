@@ -573,9 +573,19 @@ bool BufferLayer::latchBuffer(bool& recomputeVisibleRegions, nsecs_t latchTime,
     if (oldOpacity != isOpaque(s)) {
         recomputeVisibleRegions = true;
     }
+
 #ifdef QCOM_UM_FAMILY
-    if (mFlinger->mSmoMo) {
-        mFlinger->mSmoMo->SetPresentTime(getSequence(), mBufferInfo.mDesiredPresentTime);
+    const uint32_t layerStackId = getLayerStack();
+    SmomoIntf *smoMo = nullptr;
+    for (auto &instance: mFlinger->mSmomoInstances) {
+        if (instance.layerStackId == layerStackId) {
+            smoMo = instance.smoMo;
+            break;
+        }
+    }
+
+    if (smoMo) {
+        smoMo->SetPresentTime(getSequence(), mBufferInfo.mDesiredPresentTime);
     }
 #endif
     return true;
