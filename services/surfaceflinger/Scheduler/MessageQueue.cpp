@@ -129,13 +129,10 @@ void MessageQueue::vsyncCallback(nsecs_t vsyncTime, nsecs_t targetWakeupTime, ns
 #ifdef QCOM_UM_FAMILY
     SmomoIntf *smoMo = nullptr;
     for (auto &instance: mFlinger->mSmomoInstances) {
-        if (instance.displayId == 0) {
-            smoMo = instance.smoMo;
-            break;
+        smoMo = instance.smoMo;
+        if (smoMo) {
+            smoMo->OnVsync(vsyncTime);
         }
-    }
-    if (smoMo) {
-        smoMo->OnVsync(vsyncTime);
     }
 #endif
     mHandler->dispatchInvalidate(mVsync.tokenManager->generateTokenForPredictions(
