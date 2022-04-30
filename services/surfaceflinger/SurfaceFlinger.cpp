@@ -1605,18 +1605,6 @@ void SurfaceFlinger::setActiveModeInternal() {
         return;
     }
 
-    if (display->getActiveMode()->getSize() != upcomingModeInfo.mode->getSize()) {
-        auto& state = mCurrentState.displays.editValueFor(display->getDisplayToken());
-        // We need to generate new sequenceId in order to recreate the display (and this
-        // way the framebuffer).
-        state.sequenceId = DisplayDeviceState{}.sequenceId;
-        state.physical->activeMode = upcomingModeInfo.mode;
-        processDisplayChangesLocked();
-
-        // processDisplayChangesLocked will update all necessary components so we're done here.
-        return;
-    }
-
     // We just created this display so we can call even if we are not on
     // the main thread
     MainThreadScopedGuard fakeMainThreadGuard(SF_MAIN_THREAD);
@@ -1715,6 +1703,16 @@ void SurfaceFlinger::performSetActiveMode() {
             continue;
         }
         mScheduler->onNewVsyncPeriodChangeTimeline(outTimeline);
+
+        const auto upcomingMode = display->getMode(desiredActiveMode->mode->getId());
+        if (display->getActiveMode()->getSize() != upcomingMode->getSize()) {
+           auto& state = mCurrentState.displays.editValueFor(display->getDisplayToken());
+           // We need to generate new sequenceId in order to recreate the display (and this
+           // way the framebuffer).
+           state.sequenceId = DisplayDeviceState{}.sequenceId;
+           state.physical->activeMode = upcomingMode;
+           processDisplayChangesLocked();
+        }
 
         // Scheduler will submit an empty frame to HWC if needed.
         mSetActiveModePending = true;
@@ -3918,7 +3916,7 @@ void SurfaceFlinger::processDisplayChanged(const wp<IBinder>& displayToken,
         if ((currentState.orientation != drawingState.orientation) ||
             (currentState.layerStackSpaceRect != drawingState.layerStackSpaceRect) ||
             (currentState.orientedDisplaySpaceRect != drawingState.orientedDisplaySpaceRect)) {
-            if (mUseFbScaling && display->isPrimary()) {
+            if (mUseFbScaling && display->isPrimary() && display->isPoweredOn()) {
                 const ssize_t index = mCurrentState.displays.indexOfKey(displayToken);
                 DisplayDeviceState& curState = mCurrentState.displays.editValueAt(index);
                 setFrameBufferSizeForScaling(display, curState, drawingState);
@@ -3958,32 +3956,28 @@ void SurfaceFlinger::setFrameBufferSizeForScaling(sp<DisplayDevice> displayDevic
     auto display = displayDevice->getCompositionDisplay();
     int newWidth = currentState.layerStackSpaceRect.width();
     int newHeight = currentState.layerStackSpaceRect.height();
-    int currentWidth = drawingState.layerStackSpaceRect.width();
-    int currentHeight = drawingState.layerStackSpaceRect.height();
     int displayWidth = displayDevice->getWidth();
     int displayHeight = displayDevice->getHeight();
-    bool update_needed = false;
 
-    if (newWidth != currentWidth || newHeight != currentHeight) {
-        update_needed = true;
+    if (newWidth != displayWidth || newHeight != displayHeight) {
         if (!((newWidth > newHeight && displayWidth > displayHeight) ||
             (newWidth < newHeight && displayWidth < displayHeight))) {
             std::swap(newWidth, newHeight);
         }
     }
 
-    if (displayDevice->getWidth() == newWidth && displayDevice->getHeight() == newHeight &&
-        !update_needed) {
-        displayDevice->setProjection(currentState.orientation, currentState.layerStackSpaceRect,
-                                     currentState.orientedDisplaySpaceRect);
-        return;
-    }
-
     if (newWidth > 0 && newHeight > 0) {
         currentState.width =  newWidth;
         currentState.height = newHeight;
     }
+
     currentState.orientedDisplaySpaceRect =  currentState.layerStackSpaceRect;
+
+    if (displayWidth == newWidth && displayHeight == newHeight) {
+        displayDevice->setProjection(currentState.orientation, currentState.layerStackSpaceRect,
+                                     currentState.orientedDisplaySpaceRect);
+        return;
+    }
 
     if (mBootStage == BootStage::FINISHED) {
         displayDevice->setDisplaySize(currentState.width, currentState.height);
@@ -4859,13 +4853,18 @@ status_t SurfaceFlinger::setTransactionState(
     state.traverseStatesWithBuffers([&](const layer_state_t& state) {
         sp<Layer> layer = fromHandle(state.surface).promote();
         if (layer != nullptr) {
-            const uint32_t layerStackId = layer->getLayerStack();
             SmomoIntf *smoMo = nullptr;
-            for (auto &instance: mSmomoInstances) {
-                 if (instance.layerStackId == layerStackId) {
-                    smoMo = instance.smoMo;
-                    break;
+            if (mSmomoInstances.size() > 1) {
+                const uint32_t layerStackId = layer->getLayerStack();
+                for (auto &instance: mSmomoInstances) {
+                     if (instance.layerStackId == layerStackId) {
+                        smoMo = instance.smoMo;
+                        break;
+                    }
                 }
+            }
+            else if (mSmomoInstances.size() == 1) {
+                smoMo = mSmomoInstances[0].smoMo;
             }
 
             if (smoMo) {
@@ -7889,17 +7888,6 @@ status_t SurfaceFlinger::captureLayers(const LayerCaptureArgs& args,
         // and failed if display is not in native mode. This provide a way to force using native
         // colors when capture.
         dataspace = args.dataspace;
-        if (dataspace == ui::Dataspace::UNKNOWN) {
-            auto display = findDisplay(WithLayerStack(parent->getLayerStack()));
-            if (!display) {
-                // If the layer is not on a display, use the dataspace for the default display.
-                display = getDefaultDisplayDeviceLocked();
-            }
-
-            const ui::ColorMode colorMode = display->getCompositionDisplay()->getState().colorMode;
-            dataspace = pickDataspaceFromColorMode(colorMode);
-        }
-
     } // mStateLock
 
     // really small crop or frameScale
@@ -8036,7 +8024,7 @@ status_t SurfaceFlinger::captureScreenCommon(
 
         status_t result = NO_ERROR;
         renderArea->render([&] {
-            result = renderScreenImplLocked(*renderArea, traverseLayers, buffer,
+            result = renderScreenImpl(*renderArea, traverseLayers, buffer,
                                             canCaptureBlackoutContent, regionSampling, grayscale,
                                             captureResults);
         });
@@ -8048,7 +8036,7 @@ status_t SurfaceFlinger::captureScreenCommon(
     return NO_ERROR;
 }
 
-status_t SurfaceFlinger::renderScreenImplLocked(
+status_t SurfaceFlinger::renderScreenImpl(
         const RenderArea& renderArea, TraverseLayersFunction traverseLayers,
         const std::shared_ptr<renderengine::ExternalTexture>& buffer,
         bool canCaptureBlackoutContent, bool regionSampling, bool grayscale,
@@ -8071,7 +8059,20 @@ status_t SurfaceFlinger::renderScreenImplLocked(
     }
 
     captureResults.buffer = buffer->getBuffer();
-    captureResults.capturedDataspace = renderArea.getReqDataSpace();
+    auto dataspace = renderArea.getReqDataSpace();
+    auto parent = renderArea.getParentLayer();
+    if ((dataspace == ui::Dataspace::UNKNOWN) && (parent != nullptr)) {
+        Mutex::Autolock lock(mStateLock);
+        auto display = findDisplay(WithLayerStack(parent->getLayerStack()));
+        if (!display) {
+            // If the layer is not on a display, use the dataspace for the default display.
+            display = getDefaultDisplayDeviceLocked();
+        }
+
+        const ui::ColorMode colorMode = display->getCompositionDisplay()->getState().colorMode;
+        dataspace = pickDataspaceFromColorMode(colorMode);
+    }
+    captureResults.capturedDataspace = dataspace;
 
     const auto reqWidth = renderArea.getReqWidth();
     const auto reqHeight = renderArea.getReqHeight();
@@ -8089,7 +8090,7 @@ status_t SurfaceFlinger::renderScreenImplLocked(
     clientCompositionDisplay.clip = sourceCrop;
     clientCompositionDisplay.orientation = rotation;
 
-    clientCompositionDisplay.outputDataspace = renderArea.getReqDataSpace();
+    clientCompositionDisplay.outputDataspace = dataspace;
     clientCompositionDisplay.maxLuminance = DisplayDevice::sDefaultMaxLumiance;
 
     const float colorSaturation = grayscale ? 0 : 1;
@@ -8256,8 +8257,16 @@ status_t SurfaceFlinger::setDesiredDisplayModeSpecsInternal(
     // TODO(b/140204874): Leave the event in until we do proper testing with all apps that might
     // be depending in this callback.
     const auto activeMode = display->getActiveMode();
+    auto activeModeWidth = activeMode->getWidth();
+    auto activeModeHeight = activeMode->getHeight();
+    auto defaultModeWidth = (display->getMode(currentPolicy.defaultMode))->getWidth();
+    auto defaultModeHeight = (display->getMode(currentPolicy.defaultMode))->getHeight();
     if (isDisplayActiveLocked(display)) {
-        mScheduler->onPrimaryDisplayModeChanged(mAppConnectionHandle, activeMode);
+        if ((activeModeWidth == defaultModeWidth) && (activeModeHeight == defaultModeHeight)) {
+            mScheduler->onPrimaryDisplayModeChanged(mAppConnectionHandle, activeMode);
+        } else {
+            mScheduler->onPrimaryDisplayModeChanged(mAppConnectionHandle, display->getMode(currentPolicy.defaultMode));
+        }
         toggleKernelIdleTimer();
     } else {
         mScheduler->onNonPrimaryDisplayModeChanged(mAppConnectionHandle, activeMode);
