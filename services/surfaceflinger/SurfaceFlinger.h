@@ -902,7 +902,7 @@ private:
     void onMessageRefresh();
 
     // Check if unified draw supported
-    void startUnifiedDraw();
+    void startUnifiedDraw() REQUIRES(mStateLock);
     void InitComposerExtn();
     void createSmomoInstance(const DisplayDeviceState& state) REQUIRES(mStateLock);
     void destroySmomoInstance(const sp<DisplayDevice>& display);
@@ -1336,7 +1336,9 @@ private:
 
     void updateInternalDisplaysPresentationMode();
 
-    void createPhaseOffsetExtn();
+    void createPhaseOffsetExtn() REQUIRES(mStateLock);
+
+    void updateSfPhaseOffsets(const sp<DisplayDevice> &display);
 
     void setupDisplayExtnFeatures();
 
