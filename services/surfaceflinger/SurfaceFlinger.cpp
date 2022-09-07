@@ -25,9 +25,6 @@
 #include "SurfaceFlinger.h"
 
 #include <android-base/parseint.h>
-#include <aidl/vendor/qti/hardware/display/config/IDisplayConfig.h>
-#include <aidl/vendor/qti/hardware/display/config/IDisplayConfigCallback.h>
-#include <aidl/vendor/qti/hardware/display/config/BnDisplayConfigCallback.h>
 #include <android/binder_process.h>
 #include <android/binder_manager.h>
 #include <android-base/properties.h>
@@ -212,11 +209,6 @@ using ui::ColorMode;
 using ui::Dataspace;
 using ui::DisplayPrimaries;
 using ui::RenderIntent;
-using aidl::vendor::qti::hardware::display::config::IDisplayConfig;
-using aidl::vendor::qti::hardware::display::config::BnDisplayConfigCallback;
-using aidl::vendor::qti::hardware::display::config::Attributes;
-using aidl::vendor::qti::hardware::display::config::CameraSmoothOp;
-using aidl::vendor::qti::hardware::display::config::Concurrency;
 
 using KernelIdleTimerController = scheduler::RefreshRateConfigs::KernelIdleTimerController;
 
@@ -284,39 +276,6 @@ public:
 };
 #endif
 
-#ifdef AIDL_DISPLAY_CONFIG_ENABLED
-class DisplayConfigAidlCallbackHandler: public BnDisplayConfigCallback {
- public:
-    DisplayConfigAidlCallbackHandler(SurfaceFlinger& flinger) : mFlinger(flinger) {
-    }
-    virtual ndk::ScopedAStatus notifyCameraSmoothInfo(CameraSmoothOp op, int fps) {
-        return ndk::ScopedAStatus::ok();
-    }
-    virtual ndk::ScopedAStatus notifyCWBBufferDone(int32_t in_error,
-                               const ::aidl::android::hardware::common::NativeHandle& in_buffer) {
-        return ndk::ScopedAStatus::ok();
-    }
-    virtual ndk::ScopedAStatus notifyQsyncChange(bool in_qsyncEnabled, int32_t in_refreshRate,
-                                                 int32_t in_qsyncRefreshRate) {
-        return ndk::ScopedAStatus::ok();
-    }
-    virtual ndk::ScopedAStatus notifyIdleStatus(bool in_isIdle) {
-        return ndk::ScopedAStatus::ok();
-    }
-    virtual ndk::ScopedAStatus notifyResolutionChange(int32_t displayId, const Attributes& attr) {
-        ALOGV("received notification for resolution change");
-        ATRACE_CALL();
-        mFlinger.NotifyResolutionSwitch(displayId, attr.xRes, attr.yRes, attr.vsyncPeriod);
-        return ndk::ScopedAStatus::ok();
-    }
-    virtual ndk::ScopedAStatus notifyFpsMitigation(int32_t displayId, const Attributes& attr,
-                                                   Concurrency concurrency) {
-        return ndk::ScopedAStatus::ok();
-    }
- private:
-    SurfaceFlinger& mFlinger;
-};
-#endif
 struct IdleTimerConfig {
     int32_t timeoutMs;
     bool supportKernelIdleTimer;
@@ -381,12 +340,6 @@ Dataspace SurfaceFlinger::wideColorGamutCompositionDataspace = Dataspace::V0_SRG
 ui::PixelFormat SurfaceFlinger::wideColorGamutCompositionPixelFormat = ui::PixelFormat::RGBA_8888;
 bool SurfaceFlinger::sDirectStreaming;
 LatchUnsignaledConfig SurfaceFlinger::enableLatchUnsignaledConfig;
-
-#ifdef AIDL_DISPLAY_CONFIG_ENABLED
-std::shared_ptr<IDisplayConfig> displayConfigIntf = nullptr;
-std::shared_ptr<DisplayConfigAidlCallbackHandler> mAidlCallbackHandler = nullptr;
-int64_t callbackClientId = -1;
-#endif
 
 #ifdef QTI_DISPLAY_CONFIG_ENABLED
 ::DisplayConfig::ClientInterface *mDisplayConfigIntf = nullptr;
@@ -707,26 +660,6 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
 #endif
     mRefreshRateOverlaySpinner = property_get_bool("sf.debug.show_refresh_rate_overlay_spinner", 0);
 
-#ifdef AIDL_DISPLAY_CONFIG_ENABLED
-    ndk::SpAIBinder binder(
-         AServiceManager_checkService("vendor.qti.hardware.display.config.IDisplayConfig/default"));
-
-    if (binder.get() == nullptr) {
-        ALOGE("DisplayConfig AIDL is not present");
-    } else {
-        displayConfigIntf = IDisplayConfig::fromBinder(binder);
-        if (displayConfigIntf == nullptr) {
-            ALOGE("Failed to retrieve DisplayConfig AIDL binder");
-        } else {
-            mAidlCallbackHandler = ndk::SharedRefBase::make<DisplayConfigAidlCallbackHandler>(*this);
-            displayConfigIntf->registerCallback(mAidlCallbackHandler, &callbackClientId);
-            if (callbackClientId >= 0) {
-               ALOGI("Registered to displayconfig aidl service and enabled callback");
-            }
-        }
-    }
-#endif
-
     if (!mIsUserBuild && base::GetBoolProperty("debug.sf.enable_transaction_tracing"s, true)) {
         mTransactionTracing.emplace();
     }
@@ -746,14 +679,7 @@ LatchUnsignaledConfig SurfaceFlinger::getLatchUnsignaledConfig() {
     return LatchUnsignaledConfig::Disabled;
 }
 
-SurfaceFlinger::~SurfaceFlinger() {
-#ifdef AIDL_DISPLAY_CONFIG_ENABLED
-    if (displayConfigIntf && callbackClientId >= 0) {
-        displayConfigIntf->unRegisterCallback(callbackClientId);
-        callbackClientId = -1;
-    }
-#endif
-}
+SurfaceFlinger::~SurfaceFlinger() = default;
 
 void SurfaceFlinger::binderDied(const wp<IBinder>&) {
     // the window manager died on us. prepare its eulogy.
@@ -2059,20 +1985,7 @@ status_t SurfaceFlinger::isSupportedConfigSwitch(const sp<IBinder>& displayToken
                displayToken.get());
         return NAME_NOT_FOUND;
     }
-#ifdef AIDL_DISPLAY_CONFIG_ENABLED
-    if (displayConfigIntf != nullptr) {
-        const auto displayId = PhysicalDisplayId::tryCast(display->getId());
-        const auto hwcDisplayId = getHwComposer().fromPhysicalDisplayId(*displayId);
-        bool supported = false;
-        displayConfigIntf->isSupportedConfigSwitch(*hwcDisplayId, config, &supported);
-        if (!supported) {
-            ALOGW("AIDL Switching to config:%d is not supported", config);
-            return INVALID_OPERATION;
-        } else {
-            ALOGI("AIDL Switching to config:%d is supported", config);
-        }
-    }
-#elif defined(QTI_DISPLAY_CONFIG_ENABLED)
+#if defined(QTI_DISPLAY_CONFIG_ENABLED)
     const auto displayId = display->getId();
     const auto hwcDisplayId = getHwComposer().fromPhysicalDisplayId(*displayId);
     bool supported = false;
@@ -9416,51 +9329,6 @@ void SurfaceFlinger::createPhaseOffsetExtn() {
 
 void SurfaceFlinger::NotifyIdleStatus() {
   mScheduler->setIdleState();
-}
-
-void SurfaceFlinger::NotifyResolutionSwitch(int displayId, int32_t width, int32_t height,
-                                            int32_t vsyncPeriod) {
-#ifdef AIDL_DISPLAY_CONFIG_ENABLED
-    const auto dispId = getInternalDisplayId();
-    if (!dispId) {
-        ALOGE("No internal display found.");
-        return;
-    }
-
-    sp<IBinder> displayToken = getPhysicalDisplayToken(*dispId);
-    sp<DisplayDevice> display = nullptr;
-    {
-        Mutex::Autolock lock(mStateLock);
-        display = (getDisplayDeviceLocked(displayToken));
-    }
-    if (!display) {
-        ALOGE("Attempt to notify resolution switch for invalid display token %p",
-               displayToken.get());
-        return;
-    }
-
-    const auto& supportedModes = display->getSupportedModes();
-    int32_t newModeId;
-    for (const auto& [id, mode] : supportedModes) {
-
-        auto modeWidth = mode->getWidth();
-        auto modeHeight = mode->getHeight();
-        const int32_t modePeriod = static_cast<int32_t>(mode->getVsyncPeriod());
-
-        if (modeWidth == width && modeHeight == height && vsyncPeriod == modePeriod) {
-            newModeId = static_cast<int32_t>(mode->getId().value());
-            break;
-        }
-    }
-
-    if(isSupportedConfigSwitch(displayToken, newModeId) != NO_ERROR) {
-        return;
-    }
-    status_t result = setActiveModeFromBackdoor(displayToken, newModeId);
-    if (result != NO_ERROR) {
-        return;
-    }
-#endif
 }
 
 void SurfaceFlinger::setupDisplayExtnFeatures() {
