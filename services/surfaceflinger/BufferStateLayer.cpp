@@ -883,10 +883,12 @@ bool BufferStateLayer::bufferNeedsFiltering() const {
 
 void BufferStateLayer::decrementPendingBufferCount() {
     int32_t pendingBuffers = --mPendingBufferTransactions;
+#ifdef QCOM_UM_FAMILY
     if (mFlinger->mDolphinWrapper.dolphinTrackBufferDecrement) {
         mFlinger->mDolphinWrapper.dolphinTrackBufferDecrement(mBlastTransactionName.c_str(),
                 pendingBuffers);
     }
+#endif
     tracePendingBufferCount(pendingBuffers);
 }
 

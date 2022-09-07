@@ -75,7 +75,10 @@
 #include "SurfaceFlinger.h"
 #include "TimeStats/TimeStats.h"
 #include "TunnelModeEnabledReporter.h"
+
+#ifdef QCOM_UM_FAMILY
 #include "QtiGralloc.h"
+#endif
 
 #define DEBUG_RESIZE 0
 
@@ -708,8 +711,12 @@ bool Layer::isSecure() const {
 }
 
 bool Layer::isSecureDisplay() const {
+#ifdef QCOM_UM_FAMILY
     sp<const GraphicBuffer> buffer = getBuffer();
     return buffer && (buffer->getUsage() & GRALLOC_USAGE_PRIVATE_SECURE_DISPLAY);
+#else
+    return false;
+#endif
 }
 
 bool Layer::isSecureCamera() const {

@@ -519,6 +519,7 @@ private:
             auto it = mCounterByLayerHandle.find(layerHandle);
             if (it != mCounterByLayerHandle.end()) {
                 auto [name, pendingBuffers] = it->second;
+#ifdef QCOM_UM_FAMILY
                 if (mDolphinWrapper.dolphinTrackBufferIncrement) {
                     const std::string transactionName(name);
                     int newCount = (*pendingBuffers) + 1;
@@ -531,6 +532,7 @@ private:
                         return;
                     }
                 }
+#endif
                 int32_t count = ++(*pendingBuffers);
                 ATRACE_INT(name.c_str(), count);
             } else {
