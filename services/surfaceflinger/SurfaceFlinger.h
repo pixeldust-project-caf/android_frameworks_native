@@ -1338,7 +1338,7 @@ private:
 
     // access must be protected by mStateLock
     mutable Mutex mStateLock;
-    mutable Mutex mVsyncLock;
+    mutable std::recursive_mutex mVsyncLock;
     State mCurrentState{LayerVector::StateSet::Current};
     std::atomic<int32_t> mTransactionFlags = 0;
     std::vector<std::shared_ptr<CountDownLatch>> mTransactionCommittedSignals;
@@ -1642,6 +1642,7 @@ private:
     bool wakeUpPresentationDisplays = false;
     bool mInternalPresentationDisplays = false;
     bool mUseWorkDurations = false;
+    bool mDisplaySizeChanged = false;
 
     composer::ComposerExtnIntf *mComposerExtnIntf = nullptr;
     composer::FrameSchedulerIntf *mFrameSchedulerExtnIntf = nullptr;
