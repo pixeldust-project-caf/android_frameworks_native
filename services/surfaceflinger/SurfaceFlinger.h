@@ -1557,6 +1557,7 @@ private:
     bool mLumaSampling = true;
     bool mForceLightBrightness = false;
     bool mForceHwcBrightness = false;
+    bool mUseLatestHwcVsyncPeriod = true;
     sp<RegionSamplingThread> mRegionSamplingThread;
     sp<FpsReporter> mFpsReporter;
     sp<TunnelModeEnabledReporter> mTunnelModeEnabledReporter;
